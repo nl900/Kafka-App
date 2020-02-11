@@ -11,10 +11,13 @@ import com.twitter.hbc.core.event.Event;
 import com.twitter.hbc.core.processor.StringDelimitedProcessor;
 import com.twitter.hbc.httpclient.auth.Authentication;
 import com.twitter.hbc.httpclient.auth.OAuth1;
+import org.apache.kafka.clients.producer.*;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -22,10 +25,12 @@ import java.util.concurrent.TimeUnit;
 public class TwitterProducer {
     final Logger logger = LoggerFactory.getLogger(TwitterProducer.class.getName());
 
-    String consumerKey = "";
-    String consumerSecret = "";
-    String token = "";
-    String secret = "";
+    String consumerKey = "NVVFr0TNdqgIXlradADVuEQC7";
+    String consumerSecret = "xLytNA9YSrPjjM712FDYKPm9VCjoAIEZBxq8wLccfnXa8xC6X2";
+    String token = "1226721185464909824-YSoYpBjO3w0UqgUPmnRXRmv7cgv1V1";
+    String secret = "HOxmCdAUSplwyzQ42adluEkk7lofd8fd9kCY1LvIa2kx2";
+
+    List<String> terms = Lists.newArrayList("Oscars");
 
     public TwitterProducer() {}
 
@@ -44,6 +49,7 @@ public class TwitterProducer {
         client.connect();
 
         //create a kafka producer
+        KafkaProducer<String, String> producer = createKafkaProducer();
 
         //loop to send tweets to kafka
         while (!client.isDone()) {
@@ -56,9 +62,24 @@ public class TwitterProducer {
             }
             if (msg != null) {
                 logger.info(msg);
+                ProducerRecord<String, String> producerRecord = new ProducerRecord<String, String>("twitter_tweets", null, msg);
+                producer.send(producerRecord, (recordMetadata, e) -> {
+                    if (e == null) {
+                        logger.info("received new metadata: \n" +
+                                "Topic: " + recordMetadata.topic() + "\n" +
+                                "Partition:" + recordMetadata.partition() + "\n" +
+                                "Offset: " + recordMetadata.offset() + "\n" +
+                                "Timestamp: " + recordMetadata.timestamp()
+                        );
+
+                    } else {
+                        logger.error("Error while producing", e);
+                    }
+                });
             }
         }
         logger.info("End of application");
+
     }
 
     public Client createTwitterClient(BlockingQueue<String> msgQueue) {
@@ -70,7 +91,7 @@ public class TwitterProducer {
         StatusesFilterEndpoint hosebirdEndpoint = new StatusesFilterEndpoint();
         // Optional: set up some followings and track terms
         //List<Long> followings = Lists.newArrayList(1234L, 566788L);
-        List<String> terms = Lists.newArrayList("bitcoin", "Apache");
+
 //        List<String> terms = Lists.newArrayList("bitcoin");
 //        hosebirdEndpoint.followings(followings);
         hosebirdEndpoint.trackTerms(terms);
@@ -89,6 +110,18 @@ public class TwitterProducer {
                 .processor(new StringDelimitedProcessor(msgQueue));
 
         return builder.build();
+    }
+
+    public KafkaProducer<String, String> createKafkaProducer() {
+        String bootstrapServers = "localhost:9092";
+
+        Properties properties = new Properties();
+        properties.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        properties.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        properties.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+        // create the producer
+        return new KafkaProducer<>(properties);
     }
 
 }
